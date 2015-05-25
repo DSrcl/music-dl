@@ -1,0 +1,34 @@
+#!/usr/bin/env python
+import os 
+import sys
+from argparse import ArgumentParser
+from mutagen.easyid3 import EasyID3
+
+def set_album(fname, album):
+    audio = EasyID3(fname)
+    audio['album'] = album
+    audio.save()
+    print '-----', fname
+
+
+def main(args):
+    if args.directory is not None:
+        os.chdir(args.directory)
+        audio_files = [f for f in os.listdir('.') if f.endswith('.mp3')]
+    else:
+        audio_files = args.files
+    for af in audio_files:
+        set_album(af, args.album)
+
+
+if __name__ == '__main__': 
+    arg_parser = ArgumentParser()
+    arg_parser.add_argument('files', nargs='*', help='files you want to group into an album')
+    arg_parser.add_argument('-d', '--directory', help='directory of files you want to group into an album')
+    arg_parser.add_argument('-a', '--album', help='name of the album')
+    args = arg_parser.parse_args()
+    if args.album is None:
+        sys.stderr.write('You need so specify name of the album\n')
+        sys.exit(1)
+    else:
+        main(args)
