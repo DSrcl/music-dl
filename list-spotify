@@ -1,0 +1,103 @@
+#!/usr/bin/env python
+import os
+import sys
+import webbrowser
+from urlparse import urlparse, urljoin
+from argparse import ArgumentParser
+import requests
+
+KEYWORDS = ['user', 'playlist', 'artist', 'album']
+API_BASE = 'https://api.spotify.com/'
+STORE_NAME = '.spotifylist.txt'
+SPOTIFY_APPS = 'https://developer.spotify.com/my-applications'
+SPOTIFY_ACC = 'https://developer.spotify.com/web-api/console/get-album/'
+
+class SpotifySucked(Exception): pass
+
+def strip_spotify_song_name(name):
+    return name.split(' - ')[0].strip()
+
+
+def get_track_info(track, is_album):
+    if not is_album:
+        track = track['track']
+    return strip_spotify_song_name(track['name']), track['artists'][0]['name']
+
+
+def list_spotify_tracks(url, is_album, access_token):
+    resp = requests.get(url, headers={'Authorization': 'Bearer %s'% access_token})
+    if resp.status_code != 200:
+        raise SpotifySucked(resp.text)
+    return [get_track_info(item, is_album) for item in resp.json()['items']] 
+
+
+def apify_str(s):
+    return s+'s' if s in KEYWORDS else s
+
+
+def apify_url(url):
+    '''
+    given url from spotify web ui, turn it into corresponding API url
+    '''
+    path = urlparse(url).path
+    components = [apify_str(x) for x in path.split('/')]
+    is_album = 'albums' in components
+    api_endpoint = 'v1'+'/'.join(components)+'/tracks'
+    return urljoin(API_BASE, api_endpoint), is_album
+
+
+def get_access_token():
+    if not os.path.isfile(STORE_NAME):
+        raise SpotifySucked
+
+    with open(STORE_NAME) as store:
+        access_token = store.read()
+        return access_token.strip()
+
+
+def set_access_token(access_token):
+    with open(STORE_NAME, 'w') as store:
+        store.write(access_token)
+
+
+def show_tracks(tracks):
+    print '\n'.join('%s by %s'% track for track in tracks) 
+
+
+def list_spotify(spotify_url):
+    api_url, is_album = apify_url(spotify_url)
+    tracks = list_spotify_tracks(api_url, is_album, get_access_token())
+    show_tracks(tracks)
+
+
+def prompt_app_register():
+    webbrowser.open(SPOTIFY_APPS) 
+
+
+def prompt_access_token():
+    webbrowser.open(SPOTIFY_ACC)
+
+
+if __name__ == '__main__':
+    arg_parser = ArgumentParser()
+    arg_parser.add_argument('-u', '--url', help='Spotify url you copied from their web interface')
+    arg_parser.add_argument('-a', '--access_token', help='Set access token') 
+    arg_parser.add_argument('-r', '--register_spotify', help='Redirect to register spotify app', action='store_true')
+    arg_parser.add_argument('-g', '--get_access_token', help='Get access_token', action='store_true')
+    args = arg_parser.parse_args()
+
+    if args.url is not None:
+        try:
+            list_spotify(args.url)
+        except SpotifySucked:
+            print 'Need valid access token to use Spotify url'
+            sys.exit(1)
+    elif args.access_token is not None:
+        set_access_token(args.access_token)
+    elif args.register_spotify:
+        prompt_app_register()
+    elif args.get_access_token:
+        prompt_access_token()
+    else:
+        arg_parser.print_help()
+        sys.exit(1)

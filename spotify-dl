@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+./list-spotify -u $1 | ./batch-dl

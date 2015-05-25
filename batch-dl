@@ -1,0 +1,109 @@
+#!/usr/bin/env python
+import sys
+import os
+import re
+from subprocess import Popen, PIPE
+from lxml.etree import HTML
+import requests
+from urllib import urlencode
+from urlparse import urljoin
+from argparse import ArgumentParser
+
+ARGS = ['--extract-audio', '--audio-format', 'mp3']
+YOUTUBE_SEARCH = 'https://www.youtube.com/results'
+LINK_CLASS = 'yt-uix-tile-link'
+SEP = '-'*20
+NAME_RE = re.compile(r'(?P<name>.*)-(\w|\d)+.mp3')
+
+
+class SongNotFound(Exception): pass
+
+def download_url(url):
+    '''
+    given an url, call youtube-dl and return the pipe
+    '''
+    cmd = ['youtube-dl', url]
+    cmd.extend(ARGS)
+    return Popen(cmd, stdout=PIPE)
+
+
+def download_song(name):
+    '''
+    return the pipe of the youtube-dl process that downloads a song, given name of the song
+    '''
+    return download_url(find_url(name))
+
+
+def find_url(name):
+    '''
+    find url of corresponding youtube video of a song, given its name
+    '''
+    search_url = "%s?%s"% (YOUTUBE_SEARCH, urlencode({'search_query': name}))
+    search_page = HTML(requests.get(search_url).text)
+    found_urls = search_page.xpath('.//a[contains(@class, "%s")]'% LINK_CLASS)
+    if len(found_urls) > 0:
+        return urljoin(YOUTUBE_SEARCH, found_urls[0].attrib['href'])
+    else:
+        raise SongNotFound 
+
+
+def list_songs(fname):
+    '''
+    given a file, list all the song names
+    '''
+    f = open(fname) if isinstance(fname, str) else fname
+    songs = [row.strip() for row in f]
+    f.close()
+    return filter(lambda n: n != '', songs)
+
+
+def log_process(proc, descr): 
+    print 'Downloading %s'% descr
+    proc_stdout = proc.stdout.read()
+    print proc_stdout
+    print SEP
+    return '%s\n%s\n%s'% (SEP, descr, proc_stdout)
+
+
+def chdir(d):
+    if not os.path.isdir(d):
+        os.makedirs(d)
+    os.chdir(d)
+
+
+def cleanup_name(name):
+    match = NAME_RE.match(name)
+    return match.group('name')+".mp3" if match is not None else None
+
+
+def cleanup_names():
+    '''
+    rename files in current dictionary 
+    '''
+    for name in os.listdir('.'):
+        new_name = cleanup_name(name)
+        if new_name is not None:
+            os.rename(name, new_name) 
+
+
+def main(args):
+    songs = list_songs(args.source_file)
+    chdir(args.directory)
+    processes = map(download_song, songs) 
+    logs = map(log_process, processes, songs)
+
+    cleanup_names()
+    print 'Done!'
+
+    if args.log:
+        with open('youtube.log', 'w') as log_file:
+            log_file.write('\n'.join(logs))
+        print 'Log dumped at %s'% os.path.join(args.directory, 'youtube.log') 
+
+
+if __name__ == '__main__':
+    arg_parser = ArgumentParser() 
+    arg_parser.add_argument('source_file', help='file listing names of songs you want to download', nargs='?', default=sys.stdin)
+    arg_parser.add_argument('-d', '--directory', help='directory to collect all downloaded file', default='.')
+    arg_parser.add_argument('-l', '--log', help='log youtube-dl', action='store_true')
+    main(arg_parser.parse_args()) 
