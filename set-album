@@ -8,7 +8,6 @@ def set_album(fname, album):
     audio = EasyID3(fname)
     audio['album'] = album
     audio.save()
-    print '-----', fname
 
 
 def main(args):
